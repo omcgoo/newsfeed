@@ -161,24 +161,24 @@ export { clearCache, getCacheStatus };
 // Advanced Viral Content Detection and Quality Scoring System
 // Designed to surface only genuinely important content, avoiding addictive refresh patterns
 
-// Enhanced platform statistics with platform-aware scoring
+// Enhanced platform statistics with platform-aware scoring - REBALANCED
 const PLATFORM_STATS = {
   hackernews: {
     dailyActiveUsers: 500000,
     avgEngagementRate: 0.15,
-    weight: 2.0, // Increased weight for HN's thoughtful content
+    weight: 1.2, // Reduced from 2.0 to prevent domination
     viralThreshold: 50, // Lower threshold - HN is more selective
-    qualityMultiplier: 2.0, // Highest quality multiplier - HN has best signal-to-noise
+    qualityMultiplier: 1.8, // Reduced from 2.0
     velocityWeight: 0.3, // Lower velocity weight - HN is slower, more thoughtful
     postingStyle: 'slow', // Slow, thoughtful posting style
     recencyDecay: 0.95, // Very gentle decay - HN content ages well
-    baseScore: 1000 // Higher base score to compensate for lower engagement
+    baseScore: 600 // Reduced from 1000 to level the playing field
   },
   reddit: {
     dailyActiveUsers: 50000000,
     avgEngagementRate: 0.08,
     weight: 1.0, // Baseline weight
-    viralThreshold: 300, // Reduced threshold - was too high
+    viralThreshold: 200, // Reduced from 300 to include more Reddit content
     qualityMultiplier: 1.2,
     velocityWeight: 0.8, // Higher velocity - Reddit is faster
     postingStyle: 'fast', // Fast, high-volume posting
@@ -188,35 +188,35 @@ const PLATFORM_STATS = {
   lemmy: {
     dailyActiveUsers: 50000,
     avgEngagementRate: 0.25,
-    weight: 1.5, // Increased weight for community-driven content
-    viralThreshold: 15, // Lower threshold for smaller community
+    weight: 1.3, // Increased from 1.5 to boost representation
+    viralThreshold: 10, // Reduced from 15 to include more Lemmy content
     qualityMultiplier: 1.4, // Good quality multiplier
     velocityWeight: 0.6, // Moderate velocity
     postingStyle: 'community', // Community-focused
     recencyDecay: 0.9, // Gentle decay
-    baseScore: 800
+    baseScore: 700 // Increased from 800 to boost representation
   },
   mastodon: {
     dailyActiveUsers: 1000000,
     avgEngagementRate: 0.05,
-    weight: 1.2, // Increased weight for diverse content
-    viralThreshold: 15, // Much lower threshold - Mastodon has very low engagement
+    weight: 1.4, // Increased from 1.2 to boost representation
+    viralThreshold: 10, // Reduced from 15 to include more Mastodon content
     qualityMultiplier: 1.3, // Good quality multiplier
     velocityWeight: 0.4, // Lower velocity - Mastodon is slower
     postingStyle: 'diverse', // Diverse, slower posting
     recencyDecay: 0.92, // Gentle decay
-    baseScore: 600
+    baseScore: 800 // Increased from 600 to boost representation
   },
   medium: {
     dailyActiveUsers: 10000000,
     avgEngagementRate: 0.02,
-    weight: 0.8, // Reduced weight - Medium is more commercial
-    viralThreshold: 500, // Reduced threshold - was too high
+    weight: 1.0, // Increased from 0.8 to boost representation
+    viralThreshold: 300, // Reduced from 500 to include more Medium content
     qualityMultiplier: 1.1, // Lower quality multiplier
     velocityWeight: 0.7, // Moderate velocity
     postingStyle: 'commercial', // Commercial, curated content
     recencyDecay: 0.8, // Faster decay - Medium content ages quickly
-    baseScore: 400
+    baseScore: 600 // Increased from 400 to boost representation
   }
 };
 
@@ -1119,26 +1119,44 @@ export async function fetchNewsItems(): Promise<NewsItem[]> {
       );
     console.log(`Total items after advanced filtering: ${significantItems.length}`);
     
-    // Calculate advanced scores and sort by viral quality
+    // Calculate advanced scores with diversity bonus
     const scoredItems = significantItems
       .map(item => ({
         ...item,
         score: calculateAdvancedScore(item, item.source)
       }))
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => b.score - a.score);
+    
+    // Apply diversity bonus to ensure better source representation
+    const diversityBonus = 0.1; // 10% bonus for diverse sources
+    const sourceCounts: Record<string, number> = {};
+    
+    const diversifiedItems = scoredItems.map(item => {
+      const currentCount = sourceCounts[item.source] || 0;
+      sourceCounts[item.source] = currentCount + 1;
+      
+      // Apply diversity bonus if this source is underrepresented
+      const diversityMultiplier = currentCount === 0 ? (1 + diversityBonus) : 1;
+      const finalScore = item.score * diversityMultiplier;
+      
+      return {
+        ...item,
+        score: finalScore
+      };
+    }).sort((a, b) => b.score - a.score)
       .slice(0, 10);
     
     console.log('Final top 10 items by source:');
-    const sourceCounts = scoredItems.reduce((acc, item) => {
+    const finalSourceCounts = diversifiedItems.reduce((acc, item) => {
       acc[item.source] = (acc[item.source] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    console.log(sourceCounts);
+    console.log(finalSourceCounts);
     
     // Cache the final top 10 items
-    setCachedItems(scoredItems);
+    setCachedItems(diversifiedItems);
     
-    return scoredItems;
+    return diversifiedItems;
   } catch (error) {
     console.error('Error fetching news items:', error);
     return [];

@@ -161,47 +161,62 @@ export { clearCache, getCacheStatus };
 // Advanced Viral Content Detection and Quality Scoring System
 // Designed to surface only genuinely important content, avoiding addictive refresh patterns
 
-// Enhanced platform statistics with viral velocity tracking
+// Enhanced platform statistics with platform-aware scoring
 const PLATFORM_STATS = {
   hackernews: {
     dailyActiveUsers: 500000,
     avgEngagementRate: 0.15,
-    weight: 1.2,
-    viralThreshold: 100, // Points needed to be considered "viral"
-    qualityMultiplier: 1.5, // HN has high signal-to-noise
-    velocityWeight: 0.8 // How quickly engagement grows
+    weight: 2.0, // Increased weight for HN's thoughtful content
+    viralThreshold: 50, // Lower threshold - HN is more selective
+    qualityMultiplier: 2.0, // Highest quality multiplier - HN has best signal-to-noise
+    velocityWeight: 0.3, // Lower velocity weight - HN is slower, more thoughtful
+    postingStyle: 'slow', // Slow, thoughtful posting style
+    recencyDecay: 0.95, // Very gentle decay - HN content ages well
+    baseScore: 1000 // Higher base score to compensate for lower engagement
   },
   reddit: {
     dailyActiveUsers: 50000000,
     avgEngagementRate: 0.08,
-    weight: 1.0,
-    viralThreshold: 500, // Upvotes needed
+    weight: 1.0, // Baseline weight
+    viralThreshold: 300, // Reduced threshold - was too high
     qualityMultiplier: 1.2,
-    velocityWeight: 0.6
+    velocityWeight: 0.8, // Higher velocity - Reddit is faster
+    postingStyle: 'fast', // Fast, high-volume posting
+    recencyDecay: 0.85, // Moderate decay
+    baseScore: 500
   },
   lemmy: {
     dailyActiveUsers: 50000,
     avgEngagementRate: 0.25,
-    weight: 0.8,
-    viralThreshold: 20, // Score needed
-    qualityMultiplier: 1.3,
-    velocityWeight: 0.7
+    weight: 1.5, // Increased weight for community-driven content
+    viralThreshold: 15, // Lower threshold for smaller community
+    qualityMultiplier: 1.4, // Good quality multiplier
+    velocityWeight: 0.6, // Moderate velocity
+    postingStyle: 'community', // Community-focused
+    recencyDecay: 0.9, // Gentle decay
+    baseScore: 800
   },
   mastodon: {
     dailyActiveUsers: 1000000,
     avgEngagementRate: 0.05,
-    weight: 0.9,
-    viralThreshold: 50, // Combined engagement needed
-    qualityMultiplier: 1.1,
-    velocityWeight: 0.5
+    weight: 1.2, // Increased weight for diverse content
+    viralThreshold: 30, // Lower threshold - Mastodon has lower engagement
+    qualityMultiplier: 1.3, // Good quality multiplier
+    velocityWeight: 0.4, // Lower velocity - Mastodon is slower
+    postingStyle: 'diverse', // Diverse, slower posting
+    recencyDecay: 0.92, // Gentle decay
+    baseScore: 600
   },
   medium: {
     dailyActiveUsers: 10000000,
     avgEngagementRate: 0.02,
-    weight: 1.1,
-    viralThreshold: 1000, // Claps needed
-    qualityMultiplier: 1.4,
-    velocityWeight: 0.9
+    weight: 0.8, // Reduced weight - Medium is more commercial
+    viralThreshold: 500, // Reduced threshold - was too high
+    qualityMultiplier: 1.1, // Lower quality multiplier
+    velocityWeight: 0.7, // Moderate velocity
+    postingStyle: 'commercial', // Commercial, curated content
+    recencyDecay: 0.8, // Faster decay - Medium content ages quickly
+    baseScore: 400
   }
 };
 
@@ -316,7 +331,7 @@ function isTechRelated(title: string, content?: string, community?: string): boo
 }
 
 // Advanced content quality assessment
-function assessContentQuality(item: NewsItem, _source: NewsSource): ContentQuality {
+function assessContentQuality(item: NewsItem): ContentQuality {
   const title = item.title.toLowerCase();
   
   // Readability scoring
@@ -473,66 +488,121 @@ function calculateMastodonEngagement(item: MastodonPost): number {
 
 
 
-// Advanced unified scoring that prioritizes viral, quality content
+// Platform-aware scoring that respects different posting styles
 function calculateAdvancedScore(item: NewsItem, source: NewsSource): number {
   const platformStats = PLATFORM_STATS[source];
-  const quality = assessContentQuality(item, source);
+  const quality = assessContentQuality(item);
   const viralVelocity = calculateViralVelocity(item, source);
   
-  // Base engagement score
-  const baseEngagement = item.score || 0;
+  // Base engagement score with platform-specific base score
+  const baseEngagement = (item.score || 0) + platformStats.baseScore;
   
-  // Viral velocity bonus (exponential for truly viral content)
-  const viralBonus = viralVelocity.isViral ? 
-    Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.5) : 0;
+  // Platform-aware viral velocity bonus
+  let viralBonus = 0;
+  if (viralVelocity.isViral) {
+    // Different viral bonus calculation based on posting style
+    switch (platformStats.postingStyle) {
+      case 'slow': // HN - slower, more thoughtful
+        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 0.8);
+        break;
+      case 'fast': // Reddit - faster engagement
+        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.2);
+        break;
+      case 'community': // Lemmy - community-driven
+        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.0);
+        break;
+      case 'diverse': // Mastodon - diverse content
+        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 0.9);
+        break;
+      case 'commercial': // Medium - commercial content
+        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.1);
+        break;
+      default:
+        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.0);
+    }
+  }
   
   // Quality multiplier (high quality content gets amplified)
   const qualityMultiplier = 1 + (quality.overallQuality * 0.5);
   
-  // Recency decay (but much gentler than traditional algorithms)
+  // Platform-specific recency decay
   const hoursSincePublished = (Date.now() - item.publishedAt.getTime()) / (1000 * 60 * 60);
-  const recencyDecay = Math.max(0.7, 1 - (hoursSincePublished / 168)); // 7 days half-life
+  const recencyDecay = Math.max(platformStats.recencyDecay, 1 - (hoursSincePublished / 168)); // Platform-specific decay
   
-  // Source credibility bonus
-  const credibilityBonus = quality.sourceCredibility * 200;
+  // Source credibility bonus (higher for slower platforms)
+  const credibilityBonus = quality.sourceCredibility * (platformStats.postingStyle === 'slow' ? 400 : 200);
   
   // Novelty bonus for breakthrough content
   const noveltyBonus = quality.noveltyScore * 300;
   
-  // Calculate final score
+  // Platform weight bonus (HN gets extra weight for thoughtful content)
+  const platformWeight = platformStats.weight;
+  
+  // Calculate final score with platform awareness
   const finalScore = (
     (baseEngagement + viralBonus + credibilityBonus + noveltyBonus) * 
     qualityMultiplier * 
     recencyDecay * 
-    platformStats.qualityMultiplier
+    platformStats.qualityMultiplier *
+    platformWeight
   );
   
-  console.log(`Advanced scoring for "${item.title.substring(0, 50)}...":`, {
+  console.log(`Platform-aware scoring for "${item.title.substring(0, 50)}...":`, {
     source,
-    baseEngagement,
+    postingStyle: platformStats.postingStyle,
+    baseEngagement: Math.round(baseEngagement),
     viralBonus: Math.round(viralBonus),
     qualityMultiplier: qualityMultiplier.toFixed(2),
     recencyDecay: recencyDecay.toFixed(2),
+    platformWeight: platformWeight.toFixed(2),
     finalScore: Math.round(finalScore)
   });
   
   return Math.round(finalScore);
 }
 
-// Intelligent content filtering that only shows genuinely important content
+// Platform-aware content filtering that respects different posting styles
 function isSignificantContent(item: NewsItem, source: NewsSource): boolean {
   const platformStats = PLATFORM_STATS[source];
-  const quality = assessContentQuality(item, source);
+  const quality = assessContentQuality(item);
   const viralVelocity = calculateViralVelocity(item, source);
   
-  // Must meet minimum viral threshold
-  if ((item.score || 0) < platformStats.viralThreshold) return false;
+  // Platform-specific viral thresholds
+  const adjustedThreshold = platformStats.viralThreshold;
+  if ((item.score || 0) < adjustedThreshold) return false;
   
-  // Must have reasonable quality
-  if (quality.overallQuality < 0.4) return false;
+  // Platform-specific quality thresholds
+  let qualityThreshold = 0.4; // Default
+  switch (platformStats.postingStyle) {
+    case 'slow': // HN - higher quality threshold
+      qualityThreshold = 0.3; // Lower threshold since HN is already high quality
+      break;
+    case 'fast': // Reddit - moderate threshold
+      qualityThreshold = 0.4;
+      break;
+    case 'community': // Lemmy - community-driven, moderate threshold
+      qualityThreshold = 0.35;
+      break;
+    case 'diverse': // Mastodon - diverse content, lower threshold
+      qualityThreshold = 0.3;
+      break;
+    case 'commercial': // Medium - commercial content, higher threshold
+      qualityThreshold = 0.5;
+      break;
+  }
+  
+  if (quality.overallQuality < qualityThreshold) return false;
+  
+  // Platform-specific credibility requirements
+  let credibilityThreshold = 0.7; // Default
+  if (platformStats.postingStyle === 'slow') {
+    credibilityThreshold = 0.5; // HN content is generally credible
+  } else if (platformStats.postingStyle === 'commercial') {
+    credibilityThreshold = 0.8; // Medium needs higher credibility
+  }
   
   // Must be viral OR from highly credible source
-  if (!viralVelocity.isViral && quality.sourceCredibility < 0.7) return false;
+  if (!viralVelocity.isViral && quality.sourceCredibility < credibilityThreshold) return false;
   
   // Must not be clickbait (title quality check)
   const title = item.title.toLowerCase();

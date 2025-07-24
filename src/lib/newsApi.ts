@@ -310,7 +310,7 @@ function isWithin3Days(publishedAt: Date): boolean {
   return publishedAt >= threeDaysAgo;
 }
 
-// Helper function to check if content is tech-related
+// Enhanced tech relevance detection
 function isTechRelated(title: string, content?: string, community?: string): boolean {
   const text = `${title} ${content || ''} ${community || ''}`.toLowerCase();
   
@@ -327,7 +327,27 @@ function isTechRelated(title: string, content?: string, community?: string): boo
     if (isTechCommunity) return true;
   }
   
-  return hasTechKeyword;
+  // Additional tech indicators
+  const techIndicators = [
+    'github.com', 'stackoverflow.com', 'dev.to', 'medium.com',
+    'programming', 'coding', 'developer', 'software', 'tech', 'technology',
+    'ai', 'artificial intelligence', 'machine learning', 'data science',
+    'web', 'frontend', 'backend', 'fullstack', 'react', 'vue', 'angular',
+    'javascript', 'typescript', 'python', 'rust', 'go', 'java', 'c++',
+    'database', 'sql', 'nosql', 'docker', 'kubernetes', 'cloud', 'aws', 'azure',
+    'git', 'open source', 'opensource', 'linux', 'unix', 'ux', 'ui', 'design',
+    'cybersecurity', 'security', 'privacy', 'blockchain', 'crypto',
+    'startup', 'entrepreneur', 'product', 'agile', 'scrum', 'devops',
+    'mobile', 'ios', 'android', 'flutter', 'react native', 'api', 'rest',
+    'graphql', 'microservices', 'architecture', 'system design', 'testing',
+    'performance', 'optimization', 'scalability', 'distributed systems'
+  ];
+  
+  const hasTechIndicator = techIndicators.some(indicator => 
+    text.includes(indicator.toLowerCase())
+  );
+  
+  return hasTechKeyword || hasTechIndicator;
 }
 
 // Advanced content quality assessment
@@ -372,17 +392,18 @@ function assessContentQuality(item: NewsItem): ContentQuality {
   };
 }
 
-// Viral velocity calculation - simplified for immediate viral detection
+// Viral velocity calculation - fixed for immediate viral detection
 function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVelocity {
   const viralData = getViralVelocityData();
   const itemKey = `${source}_${item.id}`;
   const now = Date.now();
   
   const currentScore = item.score || 0;
-  const timeElapsed = (now - item.publishedAt.getTime()) / (1000 * 60 * 60); // hours
+  const timeElapsed = Math.max(0.1, (now - item.publishedAt.getTime()) / (1000 * 60 * 60)); // hours, min 0.1
   
   // Check if this item meets viral threshold immediately
-  const isViral = currentScore >= PLATFORM_STATS[source].viralThreshold;
+  const viralThreshold = PLATFORM_STATS[source].viralThreshold;
+  const isViral = currentScore >= viralThreshold;
   
   if (viralData[itemKey]) {
     // Update existing viral velocity
@@ -397,7 +418,7 @@ function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVeloci
       currentScore,
       timeElapsed,
       velocity,
-      isViral: isViral || velocity > 10 // Viral if threshold met OR high velocity
+      isViral: isViral || velocity > 5 // Viral if threshold met OR moderate velocity
     };
     
     viralData[itemKey] = updatedVelocity;
@@ -405,13 +426,15 @@ function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVeloci
     
     return updatedVelocity;
   } else {
-    // First time seeing this item - give it a chance to be viral
+    // First time seeing this item - calculate initial velocity
+    const initialVelocity = currentScore / timeElapsed;
+    
     const velocity: ViralVelocity = {
       initialScore: currentScore,
       currentScore,
       timeElapsed,
-      velocity: 0,
-      isViral: isViral // Viral if it meets threshold immediately
+      velocity: initialVelocity,
+      isViral: isViral || initialVelocity > 5 // Viral if threshold met OR high initial velocity
     };
     
     viralData[itemKey] = velocity;
@@ -478,14 +501,28 @@ function calculateMastodonEngagement(item: MastodonPost): number {
   
   const totalEngagement = favourites + (reblogs * 2) + replies;
   
-  console.log(`Mastodon engagement calc: favs=${favourites}, reblogs=${reblogs}, replies=${replies}, total=${totalEngagement}`);
+  // Enhanced scoring for Mastodon - give higher base scores
+  let enhancedScore = totalEngagement;
   
-  // If no engagement, give a reasonable base score for tech posts to ensure representation
-  if (totalEngagement === 0) {
-    return 50; // Reverted to a more reasonable base score
+  // Boost for posts with any engagement
+  if (totalEngagement > 0) {
+    enhancedScore = totalEngagement * 3; // 3x multiplier for any engagement
+  } else {
+    // Base score for tech-related content
+    const content = (item.content || '').toLowerCase();
+    const techKeywords = ['programming', 'coding', 'developer', 'tech', 'ai', 'software', 'web', 'linux', 'open source'];
+    const hasTechContent = techKeywords.some(keyword => content.includes(keyword));
+    
+    if (hasTechContent) {
+      enhancedScore = 25; // Higher base score for tech content
+    } else {
+      enhancedScore = 15; // Lower base score for non-tech content
+    }
   }
   
-  return totalEngagement;
+  console.log(`Mastodon engagement calc: favs=${favourites}, reblogs=${reblogs}, replies=${replies}, total=${totalEngagement}, enhanced=${enhancedScore}`);
+  
+  return enhancedScore;
 }
 
 
@@ -566,54 +603,80 @@ function calculateAdvancedScore(item: NewsItem, source: NewsSource): number {
   return Math.round(finalScore);
 }
 
-// Platform-aware content filtering that respects different posting styles
+// Platform-aware content filtering with debugging and optimization
 function isSignificantContent(item: NewsItem, source: NewsSource): boolean {
   const platformStats = PLATFORM_STATS[source];
   const quality = assessContentQuality(item);
   const viralVelocity = calculateViralVelocity(item, source);
   
-  // Platform-specific viral thresholds
-  const adjustedThreshold = platformStats.viralThreshold;
-  if ((item.score || 0) < adjustedThreshold) return false;
+  // Enhanced tech relevance check
+  const isTechRelevant = isTechRelated(item.title, item.title);
+  if (!isTechRelevant) {
+    console.log(`Filtered out non-tech content: "${item.title.substring(0, 50)}..." (${source})`);
+    return false;
+  }
   
-  // Platform-specific quality thresholds
-  let qualityThreshold = 0.4; // Default
+  // Platform-specific viral thresholds (relaxed for diversity)
+  const adjustedThreshold = platformStats.viralThreshold;
+  const score = item.score || 0;
+  if (score < adjustedThreshold) {
+    console.log(`Filtered out low engagement: "${item.title.substring(0, 50)}..." score=${score}, threshold=${adjustedThreshold} (${source})`);
+    return false;
+  }
+  
+  // Relaxed quality thresholds for better diversity
+  let qualityThreshold = 0.3; // Lowered from 0.4
   switch (platformStats.postingStyle) {
-    case 'slow': // HN - higher quality threshold
-      qualityThreshold = 0.3; // Lower threshold since HN is already high quality
+    case 'slow': // HN - already high quality
+      qualityThreshold = 0.25;
       break;
     case 'fast': // Reddit - moderate threshold
-      qualityThreshold = 0.4;
-      break;
-    case 'community': // Lemmy - community-driven, moderate threshold
-      qualityThreshold = 0.35;
-      break;
-    case 'diverse': // Mastodon - diverse content, lower threshold
       qualityThreshold = 0.3;
       break;
-    case 'commercial': // Medium - commercial content, higher threshold
-      qualityThreshold = 0.5;
+    case 'community': // Lemmy - community-driven
+      qualityThreshold = 0.25;
+      break;
+    case 'diverse': // Mastodon - diverse content
+      qualityThreshold = 0.2; // Much lower for Mastodon
+      break;
+    case 'commercial': // Medium - commercial content
+      qualityThreshold = 0.4; // Higher for Medium
       break;
   }
   
-  if (quality.overallQuality < qualityThreshold) return false;
-  
-  // Platform-specific credibility requirements
-  let credibilityThreshold = 0.7; // Default
-  if (platformStats.postingStyle === 'slow') {
-    credibilityThreshold = 0.5; // HN content is generally credible
-  } else if (platformStats.postingStyle === 'commercial') {
-    credibilityThreshold = 0.8; // Medium needs higher credibility
+  if (quality.overallQuality < qualityThreshold) {
+    console.log(`Filtered out low quality: "${item.title.substring(0, 50)}..." quality=${quality.overallQuality.toFixed(2)}, threshold=${qualityThreshold} (${source})`);
+    return false;
   }
   
-  // Must be viral OR from highly credible source
-  if (!viralVelocity.isViral && quality.sourceCredibility < credibilityThreshold) return false;
+  // Relaxed credibility requirements
+  let credibilityThreshold = 0.4; // Lowered from 0.7
+  if (platformStats.postingStyle === 'slow') {
+    credibilityThreshold = 0.3; // HN content is generally credible
+  } else if (platformStats.postingStyle === 'commercial') {
+    credibilityThreshold = 0.6; // Medium needs higher credibility
+  } else if (platformStats.postingStyle === 'diverse') {
+    credibilityThreshold = 0.2; // Mastodon is very diverse
+  }
   
-  // Must not be clickbait (title quality check)
+  // Must be viral OR from credible source (relaxed)
+  if (!viralVelocity.isViral && quality.sourceCredibility < credibilityThreshold) {
+    console.log(`Filtered out low credibility: "${item.title.substring(0, 50)}..." credibility=${quality.sourceCredibility.toFixed(2)}, threshold=${credibilityThreshold} (${source})`);
+    return false;
+  }
+  
+  // Enhanced clickbait detection
   const title = item.title.toLowerCase();
-  const clickbaitPatterns = ['you won\'t believe', 'shocking', 'amazing', 'incredible', 'mind-blowing'];
-  if (clickbaitPatterns.some(pattern => title.includes(pattern))) return false;
+  const clickbaitPatterns = [
+    'you won\'t believe', 'shocking', 'amazing', 'incredible', 'mind-blowing',
+    'trump', 'biden', 'election', 'politics', 'democrat', 'republican', 'president'
+  ];
+  if (clickbaitPatterns.some(pattern => title.includes(pattern))) {
+    console.log(`Filtered out clickbait/politics: "${item.title.substring(0, 50)}..." (${source})`);
+    return false;
+  }
   
+  console.log(`✅ Accepted: "${item.title.substring(0, 50)}..." (${source}) - score=${score}, quality=${quality.overallQuality.toFixed(2)}, viral=${viralVelocity.isViral}`);
   return true;
 }
 

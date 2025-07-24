@@ -157,27 +157,27 @@ export { clearCache, getCacheStatus };
 
 // Enhanced platform statistics with platform-aware scoring - REBALANCED
 const PLATFORM_STATS = {
-  hackernews: {
-    dailyActiveUsers: 500000,
-    avgEngagementRate: 0.15,
-    weight: 1.2, // Reduced from 2.0 to prevent domination
-    viralThreshold: 50, // Lower threshold - HN is more selective
-    qualityMultiplier: 1.8, // Reduced from 2.0
-    velocityWeight: 0.3, // Lower velocity weight - HN is slower, more thoughtful
-    postingStyle: 'slow', // Slow, thoughtful posting style
-    recencyDecay: 0.95, // Very gentle decay - HN content ages well
-    baseScore: 600 // Reduced from 1000 to level the playing field
-  },
+                hackernews: {
+                dailyActiveUsers: 500000,
+                avgEngagementRate: 0.15,
+                weight: 1.5, // Increased from 1.2 to bring back HN
+                viralThreshold: 30, // Lowered from 50 to include more HN content
+                qualityMultiplier: 2.0, // Increased from 1.8 - HN has high quality
+                velocityWeight: 0.3, // Lower velocity weight - HN is slower, more thoughtful
+                postingStyle: 'slow', // Slow, thoughtful posting style
+                recencyDecay: 0.95, // Very gentle decay - HN content ages well
+                baseScore: 800 // Increased from 600 to bring back HN
+              },
                 reddit: {
                 dailyActiveUsers: 50000000,
                 avgEngagementRate: 0.08,
-                weight: 0.8, // Reduced from 1.0 to reduce over-representation
-                viralThreshold: 300, // Increased from 200 to be more selective
-                qualityMultiplier: 1.0, // Reduced from 1.2
-                velocityWeight: 0.6, // Reduced from 0.8
+                weight: 0.9, // Slightly increased from 0.8 for better balance
+                viralThreshold: 250, // Slightly reduced from 300
+                qualityMultiplier: 1.1, // Slightly increased from 1.0
+                velocityWeight: 0.7, // Slightly increased from 0.6
                 postingStyle: 'fast', // Fast, high-volume posting
                 recencyDecay: 0.85, // Moderate decay
-                baseScore: 400 // Reduced from 500
+                baseScore: 450 // Slightly increased from 400
               },
   lemmy: {
     dailyActiveUsers: 50000,

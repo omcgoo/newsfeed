@@ -171,13 +171,13 @@ const PLATFORM_STATS = {
                 reddit: {
                 dailyActiveUsers: 50000000,
                 avgEngagementRate: 0.08,
-                weight: 0.9, // Slightly increased from 0.8 for better balance
-                viralThreshold: 250, // Slightly reduced from 300
-                qualityMultiplier: 1.1, // Slightly increased from 1.0
-                velocityWeight: 0.7, // Slightly increased from 0.6
+                weight: 0.6, // Significantly reduced from 0.9 to reduce domination
+                viralThreshold: 400, // Increased from 250 to be much more selective
+                qualityMultiplier: 0.8, // Reduced from 1.1
+                velocityWeight: 0.4, // Reduced from 0.7
                 postingStyle: 'fast', // Fast, high-volume posting
                 recencyDecay: 0.85, // Moderate decay
-                baseScore: 450 // Slightly increased from 400
+                baseScore: 300 // Reduced from 450
               },
   lemmy: {
     dailyActiveUsers: 50000,
@@ -927,10 +927,10 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
   try {
     console.log('Fetching Medium news from RSS feeds...');
     
-    // Use RSS feeds for both technology and UX tags as recommended in the article
+    // Try different RSS feeds that are more reliable
     const mediumRssUrls = [
-      'https://medium.com/feed/tag/technology',
-      'https://medium.com/feed/tag/ux'
+      'https://medium.com/feed/topic/technology',
+      'https://medium.com/feed/topic/programming'
     ];
     
     let allPosts: NewsItem[] = [];
@@ -939,9 +939,8 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
       try {
         console.log(`Fetching Medium RSS: ${rssUrl}`);
         
-        // Use RSS2JSON service as recommended in the article
-        // https://blog.narathota.com/how-to-fetch-articles-from-a-medium-blog-to-your-website-4851cb2000ab
-        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=20&api_key=demo`;
+        // Use RSS2JSON service with different parameters
+        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=15&api_key=demo&api_key=demo`;
         
         const response = await fetch(proxyUrl);
         
@@ -960,8 +959,8 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
           .filter((item: MediumRSSItem) => isTechRelated(item.title))
           .map((item: MediumRSSItem, index: number) => {
             // Calculate engagement based on position and content quality
-            const positionBonus = Math.max(0, 20 - index) * 150;
-            const baseScore = 2000;
+            const positionBonus = Math.max(0, 15 - index) * 200;
+            const baseScore = 2500;
             const engagement = baseScore + positionBonus;
             
             return {
@@ -973,7 +972,7 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
               score: engagement,
               comments: 0,
               author: item.author || 'Medium Author',
-              tags: rssUrl.includes('ux') ? ['UX', 'Design', 'Tech'] : ['Tech', 'Programming', 'AI']
+              tags: rssUrl.includes('programming') ? ['Programming', 'Tech', 'Development'] : ['Tech', 'Programming', 'AI']
             };
           });
         

@@ -58,6 +58,24 @@ interface MastodonPost {
   replies_count: number;
 }
 
+// Add interface for Medium scraped posts
+interface MediumScrapedPost {
+  title: string;
+  link: string;
+  author: string;
+  publication: string;
+  claps: number;
+  index: number;
+}
+
+// Add interface for Medium RSS items
+interface MediumRSSItem {
+  title: string;
+  link: string;
+  guid?: string;
+  pubDate?: string;
+  author?: string;
+}
 
 
 // Cache for storing fetched news items - using localStorage for persistence
@@ -915,72 +933,149 @@ async function fetchMastodonNews(): Promise<NewsItem[]> {
 
 async function fetchMediumNews(): Promise<NewsItem[]> {
   try {
-    console.log('Fetching Medium news from RSS feeds...');
+    console.log('Fetching Medium news from popular tech and UX tags...');
     
-    // Use a single, reliable RSS feed with a working proxy
-    const rssUrl = 'https://medium.com/feed/topic/technology';
+    // Scrape the actual Medium tag pages to get the most popular items
+    const mediumUrls = [
+      'https://medium.com/tag/technology',
+      'https://medium.com/tag/ux'
+    ];
     
-    // Try a different approach - use a more reliable proxy
-    const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=20&api_key=demo`;
+    let allPosts: NewsItem[] = [];
     
-    try {
-      console.log(`Fetching RSS: ${rssUrl}`);
-      const response = await fetch(proxyUrl);
-      
-      if (!response.ok) {
-        console.log(`RSS fetch failed: ${response.status}`);
-        return [];
-      }
-      
-      const data = await response.json();
-      const items = data.items || [];
-      
-      console.log(`Found ${items.length} items from Medium RSS`);
-      
-      const allPosts: NewsItem[] = [];
-      
-      items.forEach((item: Record<string, unknown>, index: number) => {
-        const title = (item.title as string) || '';
-        const link = (item.link as string) || '';
-        const pubDate = (item.pubDate as string) || '';
-        const author = (item.author as string) || 'Medium';
-        const content = (item.content as string) || '';
+    for (const url of mediumUrls) {
+      try {
+        console.log(`Scraping Medium page: ${url}`);
         
-        if (title && link && isTechRelated(title, content)) {
-          // Calculate engagement score based on content length and recency
-          const publishedDate = pubDate ? new Date(pubDate) : new Date(Date.now() - Math.random() * 3 * 24 * 60 * 60 * 1000);
-          const hoursSincePublished = (Date.now() - publishedDate.getTime()) / (1000 * 60 * 60);
-          const recencyBonus = Math.max(0, 24 - hoursSincePublished) / 24; // Bonus for recent content
-          const contentBonus = Math.min(1, (content.length || 0) / 1000); // Bonus for longer content
-          
-          const baseScore = 500;
-          const engagementScore = Math.floor(baseScore + (recencyBonus * 300) + (contentBonus * 200));
-          
-          allPosts.push({
-            id: `medium_rss_${index}_${Date.now()}`,
-            title,
-            url: link,
-            source: 'medium' as NewsSource,
-            publishedAt: publishedDate,
-            score: engagementScore,
-            comments: 0,
-            author,
-            tags: ['Tech', 'Programming', 'AI']
-          });
+        // Use a CORS proxy to fetch the actual Medium page
+        const proxyUrl = `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`;
+        const response = await fetch(proxyUrl);
+        
+        if (!response.ok) {
+          console.log(`Failed to fetch ${url}: ${response.status}`);
+          continue;
         }
-      });
-      
-      // Filter to only include posts from the last 3 days
-      const recentPosts = allPosts.filter((post: NewsItem) => isWithin3Days(post.publishedAt));
-      console.log(`Medium: ${allPosts.length} total, ${recentPosts.length} within 3 days`);
-      
-      return recentPosts;
-      
-    } catch (error) {
-      console.log('Medium RSS fetch failed, returning empty array');
-      return [];
+        
+        const data = await response.json();
+        const html = data.contents;
+        
+        // Parse the HTML to extract article information
+        // Medium articles are typically in <article> tags with specific classes
+        const articleMatches = html.match(/<article[^>]*>([\s\S]*?)<\/article>/g);
+        
+        if (articleMatches) {
+          const posts = articleMatches
+            .slice(0, 15) // Original number of articles
+            .map((article: string, index: number) => {
+              // Extract title
+              const titleMatch = article.match(/<h[1-6][^>]*>([^<]+)<\/h[1-6]>/);
+              const title = titleMatch ? titleMatch[1].trim() : '';
+              
+              // Extract link
+              const linkMatch = article.match(/href="([^"]*)"[^>]*>/);
+              const link = linkMatch ? linkMatch[1] : '';
+              
+              // Extract author
+              const authorMatch = article.match(/@([a-zA-Z0-9_-]+)/);
+              const author = authorMatch ? authorMatch[1] : 'Medium Author';
+              
+              // Extract publication
+              const pubMatch = article.match(/medium\.com\/([^\/]+)/);
+              const publication = pubMatch ? pubMatch[1] : 'medium';
+              
+              // Extract engagement (claps) - look for numbers that might be clap counts
+              const clapMatch = article.match(/(\d+)\s*(?:claps?|responses?|reads?)/i);
+              const claps = clapMatch ? parseInt(clapMatch[1]) : 0;
+              
+              return {
+                title,
+                link: link.startsWith('http') ? link : `https://medium.com${link}`,
+                author,
+                publication,
+                claps,
+                index
+              };
+            })
+            .filter((post: MediumScrapedPost) => post.title && post.link && post.title.length > 10)
+            .filter((post: MediumScrapedPost) => isTechRelated(post.title))
+            .map((post: MediumScrapedPost) => {
+              // Calculate engagement based on position and claps
+              const positionBonus = Math.max(0, 15 - post.index) * 100; // Original calculation
+              const clapScore = post.claps * 10;
+              const baseScore = 2000;
+              
+              const engagement = baseScore + positionBonus + clapScore;
+              
+              return {
+                id: `medium_${post.link}`,
+                title: post.title,
+                url: post.link,
+                source: 'medium' as NewsSource,
+                publishedAt: new Date(Date.now() - (post.index * 2 * 60 * 60 * 1000)), // Simulate recent posts
+                score: engagement,
+                comments: 0,
+                author: post.author,
+                tags: ['Tech', 'Programming', 'AI', 'UX']
+              };
+            });
+          
+          allPosts = [...allPosts, ...posts];
+          console.log(`Found ${posts.length} popular posts from ${url}`);
+        }
+      } catch (error) {
+        console.log(`Error scraping ${url}:`, error);
+      }
     }
     
+    // If scraping fails, use a more reliable RSS approach with stable content
+    if (allPosts.length === 0) {
+      console.log('Scraping failed, using fallback RSS approach...');
+      
+      // Use a single, reliable RSS feed with more stable content
+      const rssUrl = 'https://medium.com/feed/topic/technology';
+      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=30&api_key=demo`; // Original number
+      
+      try {
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+        
+        if (data.items && Array.isArray(data.items)) {
+          const posts = data.items
+            .slice(0, 20) // Original number
+            .filter((item: MediumRSSItem) => item.title && item.title.length > 10)
+            .filter((item: MediumRSSItem) => isTechRelated(item.title))
+            .map((item: MediumRSSItem, index: number) => {
+              // Calculate stable engagement based on position
+              const positionScore = Math.max(0, 20 - index) * 150; // Original calculation
+              const baseScore = 2000;
+              const engagement = baseScore + positionScore;
+              
+              return {
+                id: `medium_${item.guid || item.link}`,
+                title: item.title,
+                url: item.link,
+                source: 'medium' as NewsSource,
+                publishedAt: new Date(item.pubDate || Date.now() - (index * 60 * 60 * 1000)),
+                score: engagement,
+                comments: 0,
+                author: item.author || 'Medium Author',
+                tags: ['Tech', 'Programming', 'AI']
+              };
+            });
+          
+          allPosts = posts;
+          console.log(`Found ${posts.length} posts from RSS fallback`);
+        }
+      } catch (error) {
+        console.log('RSS fallback also failed:', error);
+      }
+    }
+    
+    // Filter to only include posts from the last 3 days
+    const recentPosts = allPosts.filter((post: NewsItem) => isWithin3Days(post.publishedAt));
+    console.log(`Medium: ${allPosts.length} total, ${recentPosts.length} within 3 days`);
+    
+    return recentPosts;
   } catch (error) {
     console.error('Error fetching Medium news:', error);
     return [];

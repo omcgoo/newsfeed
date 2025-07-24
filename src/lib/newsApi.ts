@@ -1,4 +1,80 @@
-import { NewsItem, NewsSource } from '@/types/news';
+import { NewsItem, NewsSource } from '../types/news';
+
+// TypeScript interfaces for API responses
+interface HackerNewsItem {
+  id: number;
+  title: string;
+  url: string;
+  score: number;
+  time: number;
+  by: string;
+  descendants: number;
+}
+
+interface RedditPost {
+  data: {
+    id: string;
+    title: string;
+    url: string;
+    selftext: string;
+    created_utc: number;
+    score: number;
+    num_comments: number;
+    author: string;
+    ups: number;
+  };
+}
+
+
+
+interface LemmyPost {
+  post: {
+    id: number;
+    name: string;
+    body: string;
+    published: string;
+  };
+  counts: {
+    score: number;
+    comments: number;
+  };
+  creator: {
+    name: string;
+  };
+}
+
+
+
+interface MastodonPost {
+  id: string;
+  content: string;
+  url: string;
+  created_at: string;
+  account: {
+    username: string;
+  };
+  favourites_count: number;
+  reblogs_count: number;
+  replies_count: number;
+}
+
+interface MediumRSSItem {
+  title: string;
+  link: string;
+  guid?: string;
+  pubDate?: string;
+  author?: string;
+}
+
+
+
+interface MediumScrapedPost {
+  title: string;
+  link: string;
+  author: string;
+  claps: number;
+  index: number;
+}
 
 // Cache for storing fetched news items - using localStorage for persistence
 const CACHE_KEY = 'newsfeed_cache';
@@ -167,21 +243,10 @@ function isTechRelated(title: string, content?: string, community?: string): boo
   return hasTechKeyword;
 }
 
-// Helper function to determine if content is native to platform
-function isNativeContent(url: string, source: NewsSource): boolean {
-  const platformDomains = {
-    reddit: ['reddit.com', 'redd.it'],
-    lemmy: ['lemmy.world', 'lemmy.ml', 'beehaw.org'],
-    mastodon: ['mastodon.social', 'mastodon.online'],
-    hackernews: ['news.ycombinator.com'],
-    medium: ['medium.com']
-  };
-  
-  const domain = new URL(url).hostname;
-  return platformDomains[source]?.some((d: string) => domain.includes(d)) || false;
-}
+
 
 // Helper function to extract original URL from platform-specific URLs
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractOriginalUrl(url: string, source: NewsSource, data: any): string {
   // For Reddit, check if it's a link post
   if (source === 'reddit' && data.url && !data.url.includes('reddit.com')) {
@@ -200,6 +265,7 @@ function extractOriginalUrl(url: string, source: NewsSource, data: any): string 
   
   // For Mastodon, check if it has external links
   if (source === 'mastodon' && data.entities?.urls?.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const externalUrl = data.entities.urls.find((u: any) => 
       !u.url.includes('mastodon.social') && !u.url.includes('mastodon.online')
     );
@@ -213,22 +279,22 @@ function extractOriginalUrl(url: string, source: NewsSource, data: any): string 
 }
 
 // Service-specific engagement calculation functions
-function calculateHackerNewsEngagement(item: any): number {
+function calculateHackerNewsEngagement(item: HackerNewsItem): number {
   // HN uses points (upvotes - downvotes) as primary engagement
   return item.score || 0;
 }
 
-function calculateRedditEngagement(item: any): number {
+function calculateRedditEngagement(item: RedditPost['data']): number {
   // Reddit uses upvotes as primary engagement
   return item.ups || 0;
 }
 
-function calculateLemmyEngagement(item: any): number {
+function calculateLemmyEngagement(item: LemmyPost): number {
   // Lemmy uses score (upvotes - downvotes) as primary engagement
   return item.counts?.score || 0;
 }
 
-function calculateMastodonEngagement(item: any): number {
+function calculateMastodonEngagement(item: MastodonPost): number {
   // Mastodon engagement calculation: favourites + (reblogs * 2) + replies
   const favourites = item.favourites_count || 0;
   const reblogs = item.reblogs_count || 0;
@@ -246,41 +312,7 @@ function calculateMastodonEngagement(item: any): number {
   return totalEngagement;
 }
 
-function calculateMediumEngagement(item: any, publicationName: string): number {
-  // Based on the Medium Technology page analysis:
-  // - Recommended stories: 26, 188, 118, 9, 11, 51, 234, 73 claps (average: ~88)
-  // - Stories from Apple: 20K, 48K, 1.9K claps (average: ~23K)
-  // - Latest stories: No claps shown (likely 0 for very recent posts)
-  // - Overall average across visible articles: ~2,000 claps
-  
-  const baseScore = 2000; // Average clap count from Medium Technology page
-  const recencyMultiplier = 0.5; // Recent posts get a boost
-  const randomFactor = 0.9 + Math.random() * 0.2; // 0.9 to 1.1 for variety
-  
-  // Calculate days since publication
-  const publishedDate = item.pubDate || item.published || item.date;
-  const daysSincePublished = publishedDate ? 
-    (Date.now() - new Date(publishedDate).getTime()) / (1000 * 60 * 60 * 24) : 0;
-  
-  // Apply recency bonus (newer posts get higher scores)
-  const recencyBonus = Math.max(0, 7 - daysSincePublished) * recencyMultiplier;
-  
-  // UX Designer preference: Give UX-related content a small boost
-  const title = (item.title || '').toLowerCase();
-  const isUXContent = title.includes('ux') || title.includes('user experience') || 
-                     title.includes('design') || title.includes('accessibility') ||
-                     title.includes('figma') || title.includes('ui') ||
-                     title.includes('usability') || title.includes('user interface');
-  
-  const uxBonus = isUXContent ? 200 : 0; // Small 200 point boost for UX content
-  
-  // Calculate final engagement score
-  const finalScore = (baseScore + recencyBonus + uxBonus) * randomFactor;
-  
-  console.log(`Medium post: "${item.title?.substring(0, 50)}..." - publication: ${publicationName}, base: ${baseScore}, recency: ${recencyBonus.toFixed(2)}, ux: ${uxBonus}, final: ${Math.round(finalScore)}`);
-  
-  return Math.round(finalScore);
-}
+
 
 // Unified scoring function that normalizes engagement across platforms
 function calculateUnifiedScore(source: NewsSource, rawEngagement: number, publishedAt: Date): number {
@@ -320,9 +352,9 @@ async function fetchHackerNews(): Promise<NewsItem[]> {
     const stories = await Promise.all(storyPromises);
     
     const posts = stories
-      .filter((story: any) => story && story.title && story.title.length > 10)
-      .filter((story: any) => isTechRelated(story.title, story.text))
-      .map((story: any) => {
+              .filter((story: HackerNewsItem) => story && story.title && story.title.length > 10)
+        .filter((story: HackerNewsItem) => isTechRelated(story.title))
+      .map((story: HackerNewsItem) => {
         return {
           id: `hackernews_${story.id}`,
           title: story.title,
@@ -361,9 +393,9 @@ async function fetchRedditNews(): Promise<NewsItem[]> {
         const data = await response.json();
         
         const posts = data.data.children
-          .filter((post: any) => post.data.title && post.data.title.length > 10)
-          .filter((post: any) => isTechRelated(post.data.title, post.data.selftext, subreddit))
-          .map((post: any) => {
+          .filter((post: RedditPost) => post.data.title && post.data.title.length > 10)
+          .filter((post: RedditPost) => isTechRelated(post.data.title, post.data.selftext, subreddit))
+          .map((post: RedditPost) => {
             return {
               id: `reddit_${post.data.id}`,
               title: post.data.title,
@@ -408,9 +440,9 @@ async function fetchLemmyNews(): Promise<NewsItem[]> {
         
         if (data.posts) {
           const posts = data.posts
-            .filter((post: any) => post.post.name && post.post.name.length > 10)
-            .filter((post: any) => isTechRelated(post.post.name, post.post.body, community))
-            .map((post: any) => {
+            .filter((post: LemmyPost) => post.post.name && post.post.name.length > 10)
+            .filter((post: LemmyPost) => isTechRelated(post.post.name, post.post.body, community))
+            .map((post: LemmyPost) => {
               const originalUrl = extractOriginalUrl(`https://lemmy.world/post/${post.post.id}`, 'lemmy', post);
               
               return {
@@ -451,7 +483,7 @@ async function fetchMastodonNews(): Promise<NewsItem[]> {
     
     // Original number of hashtags
     const techHashtags = ['#tech', '#programming', '#ai', '#webdev', '#opensource', '#linux', '#cybersecurity'];
-    let allPosts: any[] = [];
+    let allPosts: MastodonPost[] = [];
     
     for (const hashtag of techHashtags.slice(0, 4)) { // Keep original limit
       try {
@@ -481,14 +513,14 @@ async function fetchMastodonNews(): Promise<NewsItem[]> {
     );
     
     const filteredPosts = uniquePosts
-      .filter((post: any) => post.content && post.content.length > 20)
-      .filter((post: any) => isTechRelated(post.content, post.content))
-      .filter((post: any) => {
+      .filter((post: MastodonPost) => post.content && post.content.length > 20)
+      .filter((post: MastodonPost) => isTechRelated(post.content, post.content))
+      .filter((post: MastodonPost) => {
         // English language filtering
         const englishRatio = englishWordCount(post.content) / post.content.split(' ').length;
         return englishRatio > 0.7;
       })
-      .map((post: any) => {
+      .map((post: MastodonPost) => {
         const originalUrl = extractOriginalUrl(post.url, 'mastodon', post);
         
         return {
@@ -580,9 +612,9 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
                 index
               };
             })
-            .filter((post: any) => post.title && post.link && post.title.length > 10)
-            .filter((post: any) => isTechRelated(post.title))
-            .map((post: any) => {
+            .filter((post: MediumScrapedPost) => post.title && post.link && post.title.length > 10)
+            .filter((post: MediumScrapedPost) => isTechRelated(post.title))
+            .map((post: MediumScrapedPost) => {
               // Calculate engagement based on position and claps
               const positionBonus = Math.max(0, 15 - post.index) * 100; // Original calculation
               const clapScore = post.claps * 10;
@@ -626,9 +658,9 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
         if (data.items && Array.isArray(data.items)) {
           const posts = data.items
             .slice(0, 20) // Original number
-            .filter((item: any) => item.title && item.title.length > 10)
-            .filter((item: any) => isTechRelated(item.title))
-            .map((item: any, index: number) => {
+            .filter((item: MediumRSSItem) => item.title && item.title.length > 10)
+            .filter((item: MediumRSSItem) => isTechRelated(item.title))
+            .map((item: MediumRSSItem, index: number) => {
               // Calculate stable engagement based on position
               const positionScore = Math.max(0, 20 - index) * 150; // Original calculation
               const baseScore = 2000;
@@ -708,11 +740,10 @@ export async function fetchNewsItems(): Promise<NewsItem[]> {
     const scoredItems = uniqueRecentItems
       .map(item => ({
         ...item,
-        perCapitaScore: calculateUnifiedScore(item.source, item.score || 0, item.publishedAt)
+        score: calculateUnifiedScore(item.source, item.score || 0, item.publishedAt)
       }))
-      .sort((a, b) => b.perCapitaScore - a.perCapitaScore)
-      .slice(0, 10)
-      .map(({ perCapitaScore, ...cleanItem }) => cleanItem);
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
     
     console.log('Final top 10 items by source:');
     const sourceCounts = scoredItems.reduce((acc, item) => {

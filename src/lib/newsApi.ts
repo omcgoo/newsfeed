@@ -429,10 +429,11 @@ function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVeloci
     return updatedVelocity;
   } else {
     // First time seeing this item - calculate initial velocity
+    // For new items, assume they gained their current score over the time elapsed
     const initialVelocity = currentScore / timeElapsed;
     
     const velocity: ViralVelocity = {
-      initialScore: currentScore,
+      initialScore: 0, // Start from 0 for new items
       currentScore,
       timeElapsed,
       velocity: initialVelocity,
@@ -877,9 +878,9 @@ async function fetchMastodonNews(): Promise<NewsItem[]> {
         return isTech;
       })
       .filter((post: MastodonPost) => {
-        // English language filtering
+        // English language filtering - relaxed to allow more content
         const englishRatio = englishWordCount(post.content) / post.content.split(' ').length;
-        const isEnglish = englishRatio > 0.7;
+        const isEnglish = englishRatio > 0.3; // Reduced from 0.7 to 0.3
         if (!isEnglish) {
           console.log(`Mastodon language filter: "${post.content.substring(0, 50)}..." - NOT ENGLISH (${englishRatio.toFixed(2)})`);
         }
@@ -916,94 +917,70 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
   try {
     console.log('Fetching Medium news from RSS feeds...');
     
-    // Use reliable RSS feeds instead of scraping
-    const rssUrls = [
-      'https://medium.com/feed/topic/technology',
-      'https://medium.com/feed/tag/ux',
-      'https://medium.com/feed/tag/programming',
-      'https://medium.com/feed/tag/artificial-intelligence'
-    ];
+    // Use a single, reliable RSS feed with a working proxy
+    const rssUrl = 'https://medium.com/feed/topic/technology';
     
-    const allPosts: NewsItem[] = [];
+    // Try a different approach - use a more reliable proxy
+    const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=20&api_key=demo`;
     
-    for (const rssUrl of rssUrls) {
-      try {
-        console.log(`Fetching RSS: ${rssUrl}`);
-        
-        // Try multiple CORS proxies
-        const proxies = [
-          `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&count=20`,
-          `https://feed2json.org/convert?url=${encodeURIComponent(rssUrl)}&count=20`,
-          `https://rss-parser.netlify.app/?url=${encodeURIComponent(rssUrl)}&count=20`
-        ];
-        
-        let response = null;
-        for (const proxy of proxies) {
-          try {
-            response = await fetch(proxy);
-            if (response.ok) break;
-          } catch (error) {
-            console.log(`Proxy failed: ${proxy}`);
-            continue;
-          }
-        }
-        
-        if (!response || !response.ok) {
-          console.log(`All proxies failed for ${rssUrl}`);
-          continue;
-        }
-        
-        const data = await response.json();
-        const items = data.items || data.entries || [];
-        
-        console.log(`Found ${items.length} items from ${rssUrl}`);
-        
-        items.forEach((item: Record<string, unknown>, index: number) => {
-          const title = (item.title as string) || (item.name as string) || '';
-          const link = (item.link as string) || (item.url as string) || '';
-          const pubDate = (item.pubDate as string) || (item.published as string) || (item.date as string) || '';
-          const author = (item.author as string) || (item.creator as string) || 'Medium';
-          const content = (item.content as string) || (item.description as string) || '';
-          
-          if (title && link && isTechRelated(title, content)) {
-            // Calculate engagement score based on content length and recency
-            const publishedDate = pubDate ? new Date(pubDate) : new Date(Date.now() - Math.random() * 3 * 24 * 60 * 60 * 1000);
-            const hoursSincePublished = (Date.now() - publishedDate.getTime()) / (1000 * 60 * 60);
-            const recencyBonus = Math.max(0, 24 - hoursSincePublished) / 24; // Bonus for recent content
-            const contentBonus = Math.min(1, (content.length || 0) / 1000); // Bonus for longer content
-            
-            const baseScore = 500;
-            const engagementScore = Math.floor(baseScore + (recencyBonus * 300) + (contentBonus * 200));
-            
-            allPosts.push({
-              id: `medium_rss_${index}_${Date.now()}`,
-              title,
-              url: link,
-              source: 'medium' as NewsSource,
-              publishedAt: publishedDate,
-              score: engagementScore,
-              comments: 0,
-              author,
-              tags: ['Tech', 'Programming', 'AI']
-            });
-          }
-        });
-        
-      } catch {
-        console.log(`Error fetching ${rssUrl}`);
+    try {
+      console.log(`Fetching RSS: ${rssUrl}`);
+      const response = await fetch(proxyUrl);
+      
+      if (!response.ok) {
+        console.log(`RSS fetch failed: ${response.status}`);
+        return [];
       }
+      
+      const data = await response.json();
+      const items = data.items || [];
+      
+      console.log(`Found ${items.length} items from Medium RSS`);
+      
+      const allPosts: NewsItem[] = [];
+      
+      items.forEach((item: Record<string, unknown>, index: number) => {
+        const title = (item.title as string) || '';
+        const link = (item.link as string) || '';
+        const pubDate = (item.pubDate as string) || '';
+        const author = (item.author as string) || 'Medium';
+        const content = (item.content as string) || '';
+        
+        if (title && link && isTechRelated(title, content)) {
+          // Calculate engagement score based on content length and recency
+          const publishedDate = pubDate ? new Date(pubDate) : new Date(Date.now() - Math.random() * 3 * 24 * 60 * 60 * 1000);
+          const hoursSincePublished = (Date.now() - publishedDate.getTime()) / (1000 * 60 * 60);
+          const recencyBonus = Math.max(0, 24 - hoursSincePublished) / 24; // Bonus for recent content
+          const contentBonus = Math.min(1, (content.length || 0) / 1000); // Bonus for longer content
+          
+          const baseScore = 500;
+          const engagementScore = Math.floor(baseScore + (recencyBonus * 300) + (contentBonus * 200));
+          
+          allPosts.push({
+            id: `medium_rss_${index}_${Date.now()}`,
+            title,
+            url: link,
+            source: 'medium' as NewsSource,
+            publishedAt: publishedDate,
+            score: engagementScore,
+            comments: 0,
+            author,
+            tags: ['Tech', 'Programming', 'AI']
+          });
+        }
+      });
+      
+      // Filter to only include posts from the last 3 days
+      const recentPosts = allPosts.filter((post: NewsItem) => isWithin3Days(post.publishedAt));
+      console.log(`Medium: ${allPosts.length} total, ${recentPosts.length} within 3 days`);
+      
+      return recentPosts;
+      
+    } catch (error) {
+      console.log('Medium RSS fetch failed, returning empty array');
+      return [];
     }
     
-    // Remove duplicates
-    const uniquePosts = allPosts.filter((post, index, self) => 
-      index === self.findIndex(p => p.url === post.url)
-    );
-    
-    // Filter to only include posts from the last 3 days
-    const recentPosts = uniquePosts.filter((post: NewsItem) => isWithin3Days(post.publishedAt));
-    console.log(`Medium: ${uniquePosts.length} total, ${recentPosts.length} within 3 days`);
-    
-    return recentPosts;
   } catch (error) {
     console.error('Error fetching Medium news:', error);
     return [];

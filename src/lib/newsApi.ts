@@ -498,9 +498,22 @@ function calculateHackerNewsEngagement(item: HackerNewsItem): number {
   return item.score || 0;
 }
 
-function calculateRedditEngagement(item: RedditPost['data']): number {
+// Add per-subreddit weights
+const SUBREDDIT_WEIGHTS: Record<string, number> = {
+  programming: 1.0,
+  technology: 0.7, // Large, so lower weight
+  webdev: 1.2,
+  reactjs: 1.1,
+  typescript: 1.1,
+  ux: 1.5, // If you add 'ux', give it a high weight
+  // Add more as needed
+};
+
+function calculateRedditEngagement(item: RedditPost['data'], subreddit?: string): number {
   // Reddit uses upvotes as primary engagement
-  return item.ups || 0;
+  const base = item.ups || 0;
+  const weight = subreddit && SUBREDDIT_WEIGHTS[subreddit.toLowerCase()] ? SUBREDDIT_WEIGHTS[subreddit.toLowerCase()] : 1.0;
+  return Math.round(base * weight);
 }
 
 function calculateLemmyEngagement(item: LemmyPost): number {
@@ -749,7 +762,7 @@ async function fetchRedditNews(): Promise<NewsItem[]> {
     console.log('Fetching Reddit news...');
     
     // Original number of subreddits
-    const subreddits = ['programming', 'technology', 'webdev', 'reactjs', 'typescript'];
+    const subreddits = ['programming', 'technology', 'webdev', 'reactjs', 'typescript', 'ux'];
     const allPosts: NewsItem[] = [];
     
     for (const subreddit of subreddits) {
@@ -767,10 +780,10 @@ async function fetchRedditNews(): Promise<NewsItem[]> {
               url: extractOriginalUrl(post.data.url, 'reddit', post.data),
               source: 'reddit' as NewsSource,
               publishedAt: new Date(post.data.created_utc * 1000),
-              score: calculateRedditEngagement(post.data),
+              score: calculateRedditEngagement(post.data, subreddit),
               comments: post.data.num_comments,
               author: post.data.author,
-              tags: ['Tech', 'Programming', 'AI']
+              tags: ['Tech', 'Programming', 'AI', subreddit]
             };
           });
         

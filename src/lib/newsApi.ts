@@ -158,34 +158,105 @@ function getCacheStatus(): { isValid: boolean; age?: number } {
 // Export cache management functions for UI use
 export { clearCache, getCacheStatus };
 
-// Platform statistics for per-capita normalization
+// Advanced Viral Content Detection and Quality Scoring System
+// Designed to surface only genuinely important content, avoiding addictive refresh patterns
+
+// Enhanced platform statistics with viral velocity tracking
 const PLATFORM_STATS = {
   hackernews: {
-    dailyActiveUsers: 100000, // Reduced from 500K to 100K for better scoring
-    avgEngagementRate: 0.15, // 15% of users engage with posts
-    weight: 1.0 // Baseline weight
+    dailyActiveUsers: 500000,
+    avgEngagementRate: 0.15,
+    weight: 1.2,
+    viralThreshold: 100, // Points needed to be considered "viral"
+    qualityMultiplier: 1.5, // HN has high signal-to-noise
+    velocityWeight: 0.8 // How quickly engagement grows
   },
   reddit: {
-    dailyActiveUsers: 5000000, // Reduced from 10M to 5M for better scoring
-    avgEngagementRate: 0.08, // Increased from 0.05 to 0.08
-    weight: 1.2 // Increased from 0.8 to 1.2
+    dailyActiveUsers: 50000000,
+    avgEngagementRate: 0.08,
+    weight: 1.0,
+    viralThreshold: 500, // Upvotes needed
+    qualityMultiplier: 1.2,
+    velocityWeight: 0.6
   },
   lemmy: {
-    dailyActiveUsers: 10000, // Reduced from 50K to 10K for better scoring
-    avgEngagementRate: 0.25, // High engagement in tight community
-    weight: 0.8 // Moderate weight - not artificially suppressed
+    dailyActiveUsers: 50000,
+    avgEngagementRate: 0.25,
+    weight: 0.8,
+    viralThreshold: 20, // Score needed
+    qualityMultiplier: 1.3,
+    velocityWeight: 0.7
   },
   mastodon: {
-    dailyActiveUsers: 100000, // Reduced from 200K to 100K for better scoring
-    avgEngagementRate: 0.30, // Increased from 0.20 to 0.30
-    weight: 1.5 // Increased from 1.0 to 1.5
+    dailyActiveUsers: 1000000,
+    avgEngagementRate: 0.05,
+    weight: 0.9,
+    viralThreshold: 50, // Combined engagement needed
+    qualityMultiplier: 1.1,
+    velocityWeight: 0.5
   },
   medium: {
-    dailyActiveUsers: 1000000, // Reduced from 2M to 1M for better per-capita scoring
-    avgEngagementRate: 0.20, // Increased from 0.12 to 0.20 for higher engagement
-    weight: 2.0 // Increased from 1.3 to 2.0 for much higher weight
+    dailyActiveUsers: 10000000,
+    avgEngagementRate: 0.02,
+    weight: 1.1,
+    viralThreshold: 1000, // Claps needed
+    qualityMultiplier: 1.4,
+    velocityWeight: 0.9
   }
 };
+
+// Viral velocity tracking - how quickly content gains engagement
+interface ViralVelocity {
+  initialScore: number;
+  currentScore: number;
+  timeElapsed: number; // hours since first detection
+  velocity: number; // score increase per hour
+  isViral: boolean;
+}
+
+// Enhanced content quality scoring
+interface ContentQuality {
+  readabilityScore: number; // 0-1, based on title length, clarity
+  sourceCredibility: number; // 0-1, based on domain reputation
+  engagementQuality: number; // 0-1, ratio of meaningful engagement
+  noveltyScore: number; // 0-1, how unique/innovative the content is
+  overallQuality: number; // 0-1, weighted average
+}
+
+// Persistent cache for viral velocity tracking
+const VIRAL_CACHE_KEY = 'viral_velocity_cache';
+const VIRAL_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+// Function to get viral velocity data
+function getViralVelocityData(): Record<string, ViralVelocity> {
+  try {
+    const cached = localStorage.getItem(VIRAL_CACHE_KEY);
+    if (cached) {
+      const data = JSON.parse(cached);
+      // Only use if cache is fresh
+      if (Date.now() - data.timestamp < VIRAL_CACHE_DURATION) {
+        return data.velocities || {};
+      }
+    }
+    return {};
+  } catch (error) {
+    console.log('Error reading viral velocity cache:', error);
+    return {};
+  }
+}
+
+// Function to update viral velocity data
+function updateViralVelocityData(velocities: Record<string, ViralVelocity>): void {
+  try {
+    const cacheData = {
+      velocities,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(VIRAL_CACHE_KEY, JSON.stringify(cacheData));
+  } catch (error) {
+    console.log('Error updating viral velocity cache:', error);
+  }
+}
 
 // Tech-related keywords for content filtering
 const TECH_KEYWORDS = [
@@ -244,7 +315,94 @@ function isTechRelated(title: string, content?: string, community?: string): boo
   return hasTechKeyword;
 }
 
+// Advanced content quality assessment
+function assessContentQuality(item: NewsItem, _source: NewsSource): ContentQuality {
+  const title = item.title.toLowerCase();
+  
+  // Readability scoring
+  const titleLength = item.title.length;
+  const readabilityScore = Math.min(1, titleLength / 100); // Optimal length around 100 chars
+  
+  // Source credibility based on domain patterns
+  const url = item.url.toLowerCase();
+  let sourceCredibility = 0.5; // Default neutral
+  
+  if (url.includes('github.com') || url.includes('stackoverflow.com')) sourceCredibility = 0.9;
+  else if (url.includes('medium.com') || url.includes('dev.to')) sourceCredibility = 0.7;
+  else if (url.includes('techcrunch.com') || url.includes('arstechnica.com')) sourceCredibility = 0.8;
+  else if (url.includes('reddit.com') || url.includes('lemmy.world')) sourceCredibility = 0.4;
+  
+  // Engagement quality - ratio of meaningful engagement
+  const totalEngagement = (item.score || 0) + ((item.comments || 0) * 2);
+  const engagementQuality = Math.min(1, totalEngagement / 1000);
+  
+  // Novelty scoring - detect innovative/unique content
+  const noveltyKeywords = ['new', 'breakthrough', 'revolutionary', 'first', 'announcement', 'launch', 'release'];
+  const noveltyScore = noveltyKeywords.some(keyword => title.includes(keyword)) ? 0.8 : 0.3;
+  
+  // Overall quality weighted average
+  const overallQuality = (
+    readabilityScore * 0.2 +
+    sourceCredibility * 0.3 +
+    engagementQuality * 0.3 +
+    noveltyScore * 0.2
+  );
+  
+  return {
+    readabilityScore,
+    sourceCredibility,
+    engagementQuality,
+    noveltyScore,
+    overallQuality
+  };
+}
 
+// Viral velocity calculation
+function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVelocity {
+  const viralData = getViralVelocityData();
+  const itemKey = `${source}_${item.id}`;
+  const now = Date.now();
+  
+  const currentScore = item.score || 0;
+  const timeElapsed = (now - item.publishedAt.getTime()) / (1000 * 60 * 60); // hours
+  
+  if (viralData[itemKey]) {
+    // Update existing viral velocity
+    const existing = viralData[itemKey];
+    const scoreIncrease = currentScore - existing.initialScore;
+    const timeIncrease = timeElapsed - existing.timeElapsed;
+    
+    const velocity = timeIncrease > 0 ? scoreIncrease / timeIncrease : 0;
+    const isViral = currentScore >= PLATFORM_STATS[source].viralThreshold && velocity > 0;
+    
+    const updatedVelocity: ViralVelocity = {
+      initialScore: existing.initialScore,
+      currentScore,
+      timeElapsed,
+      velocity,
+      isViral
+    };
+    
+    viralData[itemKey] = updatedVelocity;
+    updateViralVelocityData(viralData);
+    
+    return updatedVelocity;
+  } else {
+    // First time seeing this item
+    const velocity: ViralVelocity = {
+      initialScore: currentScore,
+      currentScore,
+      timeElapsed,
+      velocity: 0,
+      isViral: currentScore >= PLATFORM_STATS[source].viralThreshold
+    };
+    
+    viralData[itemKey] = velocity;
+    updateViralVelocityData(viralData);
+    
+    return velocity;
+  }
+}
 
 // Helper function to extract original URL from platform-specific URLs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -315,24 +473,73 @@ function calculateMastodonEngagement(item: MastodonPost): number {
 
 
 
-// Unified scoring function that normalizes engagement across platforms
-function calculateUnifiedScore(source: NewsSource, rawEngagement: number, publishedAt: Date): number {
+// Advanced unified scoring that prioritizes viral, quality content
+function calculateAdvancedScore(item: NewsItem, source: NewsSource): number {
   const platformStats = PLATFORM_STATS[source];
+  const quality = assessContentQuality(item, source);
+  const viralVelocity = calculateViralVelocity(item, source);
   
-  // Normalize engagement by platform's average engagement rate and daily active users
-  const normalizedScore = rawEngagement / (platformStats.avgEngagementRate * platformStats.dailyActiveUsers);
+  // Base engagement score
+  const baseEngagement = item.score || 0;
   
-  // Apply platform weight
-  const weightedScore = normalizedScore * platformStats.weight;
+  // Viral velocity bonus (exponential for truly viral content)
+  const viralBonus = viralVelocity.isViral ? 
+    Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.5) : 0;
   
-  // Calculate recency bonus (posts from last 24 hours get a boost)
-  const hoursSincePublished = (Date.now() - publishedAt.getTime()) / (1000 * 60 * 60);
-  const recencyBonus = Math.max(0, 1 - (hoursSincePublished / 24)) * 0.1; // 10% max bonus
+  // Quality multiplier (high quality content gets amplified)
+  const qualityMultiplier = 1 + (quality.overallQuality * 0.5);
   
-  // Calculate final score (removed random factor for consistency)
-  const finalScore = (weightedScore + recencyBonus) * 1000;
+  // Recency decay (but much gentler than traditional algorithms)
+  const hoursSincePublished = (Date.now() - item.publishedAt.getTime()) / (1000 * 60 * 60);
+  const recencyDecay = Math.max(0.7, 1 - (hoursSincePublished / 168)); // 7 days half-life
   
-  return finalScore;
+  // Source credibility bonus
+  const credibilityBonus = quality.sourceCredibility * 200;
+  
+  // Novelty bonus for breakthrough content
+  const noveltyBonus = quality.noveltyScore * 300;
+  
+  // Calculate final score
+  const finalScore = (
+    (baseEngagement + viralBonus + credibilityBonus + noveltyBonus) * 
+    qualityMultiplier * 
+    recencyDecay * 
+    platformStats.qualityMultiplier
+  );
+  
+  console.log(`Advanced scoring for "${item.title.substring(0, 50)}...":`, {
+    source,
+    baseEngagement,
+    viralBonus: Math.round(viralBonus),
+    qualityMultiplier: qualityMultiplier.toFixed(2),
+    recencyDecay: recencyDecay.toFixed(2),
+    finalScore: Math.round(finalScore)
+  });
+  
+  return Math.round(finalScore);
+}
+
+// Intelligent content filtering that only shows genuinely important content
+function isSignificantContent(item: NewsItem, source: NewsSource): boolean {
+  const platformStats = PLATFORM_STATS[source];
+  const quality = assessContentQuality(item, source);
+  const viralVelocity = calculateViralVelocity(item, source);
+  
+  // Must meet minimum viral threshold
+  if ((item.score || 0) < platformStats.viralThreshold) return false;
+  
+  // Must have reasonable quality
+  if (quality.overallQuality < 0.4) return false;
+  
+  // Must be viral OR from highly credible source
+  if (!viralVelocity.isViral && quality.sourceCredibility < 0.7) return false;
+  
+  // Must not be clickbait (title quality check)
+  const title = item.title.toLowerCase();
+  const clickbaitPatterns = ['you won\'t believe', 'shocking', 'amazing', 'incredible', 'mind-blowing'];
+  if (clickbaitPatterns.some(pattern => title.includes(pattern))) return false;
+  
+  return true;
 }
 
 // Function to fetch news from Hacker News API
@@ -730,18 +937,20 @@ export async function fetchNewsItems(): Promise<NewsItem[]> {
     const allItems = [...hackerNewsItems, ...redditItems, ...lemmyItems, ...mastodonItems, ...mediumItems];
     console.log(`Total items before filtering: ${allItems.length}`);
     
-    // Remove duplicates and filter to recent items in one pass
-    const uniqueRecentItems = allItems
+    // Advanced filtering: only show significant, viral content
+    const significantItems = allItems
       .filter((item, index, self) => 
-        index === self.findIndex(t => t.url === item.url) && isWithin3Days(item.publishedAt)
+        index === self.findIndex(t => t.url === item.url) && 
+        isWithin3Days(item.publishedAt) &&
+        isSignificantContent(item, item.source)
       );
-    console.log(`Total items after deduplication and filtering: ${uniqueRecentItems.length}`);
+    console.log(`Total items after advanced filtering: ${significantItems.length}`);
     
-    // Calculate scores and sort in one pass for better performance
-    const scoredItems = uniqueRecentItems
+    // Calculate advanced scores and sort by viral quality
+    const scoredItems = significantItems
       .map(item => ({
         ...item,
-        score: calculateUnifiedScore(item.source, item.score || 0, item.publishedAt)
+        score: calculateAdvancedScore(item, item.source)
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);

@@ -59,7 +59,7 @@ export default function NewsFeed() {
 
   return (
     <div className="w-full">
-      <div className="space-y-0">
+      <div className="grid grid-cols-[40px_40px_1fr_120px] divide-y divide-gray-200">
         {newsItems.map((item, index) => (
           <NewsItem 
             key={item.id} 
@@ -68,7 +68,6 @@ export default function NewsFeed() {
           />
         ))}
       </div>
-      
       <div className="mt-12 pt-8 border-t border-gray-200 text-center">
         <p className="text-sm text-gray-500">
           Stories from Hacker News, Reddit, Bluesky, Lemmy, and Mastodon

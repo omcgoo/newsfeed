@@ -77,6 +77,7 @@ interface MediumScrapedPost {
 }
 
 // Cache for storing fetched news items - using localStorage for persistence
+// Updated for Vercel deployment
 const CACHE_KEY = 'newsfeed_cache';
 const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
 

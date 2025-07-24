@@ -200,7 +200,7 @@ const PLATFORM_STATS = {
     dailyActiveUsers: 1000000,
     avgEngagementRate: 0.05,
     weight: 1.2, // Increased weight for diverse content
-    viralThreshold: 30, // Lower threshold - Mastodon has lower engagement
+    viralThreshold: 15, // Much lower threshold - Mastodon has very low engagement
     qualityMultiplier: 1.3, // Good quality multiplier
     velocityWeight: 0.4, // Lower velocity - Mastodon is slower
     postingStyle: 'diverse', // Diverse, slower posting
@@ -372,7 +372,7 @@ function assessContentQuality(item: NewsItem): ContentQuality {
   };
 }
 
-// Viral velocity calculation
+// Viral velocity calculation - simplified for immediate viral detection
 function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVelocity {
   const viralData = getViralVelocityData();
   const itemKey = `${source}_${item.id}`;
@@ -381,21 +381,23 @@ function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVeloci
   const currentScore = item.score || 0;
   const timeElapsed = (now - item.publishedAt.getTime()) / (1000 * 60 * 60); // hours
   
+  // Check if this item meets viral threshold immediately
+  const isViral = currentScore >= PLATFORM_STATS[source].viralThreshold;
+  
   if (viralData[itemKey]) {
     // Update existing viral velocity
     const existing = viralData[itemKey];
     const scoreIncrease = currentScore - existing.initialScore;
-    const timeIncrease = timeElapsed - existing.timeElapsed;
+    const timeIncrease = Math.max(0.1, timeElapsed - existing.timeElapsed); // Prevent division by zero
     
-    const velocity = timeIncrease > 0 ? scoreIncrease / timeIncrease : 0;
-    const isViral = currentScore >= PLATFORM_STATS[source].viralThreshold && velocity > 0;
+    const velocity = scoreIncrease / timeIncrease;
     
     const updatedVelocity: ViralVelocity = {
       initialScore: existing.initialScore,
       currentScore,
       timeElapsed,
       velocity,
-      isViral
+      isViral: isViral || velocity > 10 // Viral if threshold met OR high velocity
     };
     
     viralData[itemKey] = updatedVelocity;
@@ -403,13 +405,13 @@ function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVeloci
     
     return updatedVelocity;
   } else {
-    // First time seeing this item
+    // First time seeing this item - give it a chance to be viral
     const velocity: ViralVelocity = {
       initialScore: currentScore,
       currentScore,
       timeElapsed,
       velocity: 0,
-      isViral: currentScore >= PLATFORM_STATS[source].viralThreshold
+      isViral: isViral // Viral if it meets threshold immediately
     };
     
     viralData[itemKey] = velocity;
@@ -552,6 +554,9 @@ function calculateAdvancedScore(item: NewsItem, source: NewsSource): number {
     postingStyle: platformStats.postingStyle,
     baseEngagement: Math.round(baseEngagement),
     viralBonus: Math.round(viralBonus),
+    viralThreshold: platformStats.viralThreshold,
+    isViral: viralVelocity.isViral,
+    viralVelocity: viralVelocity.velocity.toFixed(2),
     qualityMultiplier: qualityMultiplier.toFixed(2),
     recencyDecay: recencyDecay.toFixed(2),
     platformWeight: platformWeight.toFixed(2),
@@ -754,35 +759,36 @@ async function fetchLemmyNews(): Promise<NewsItem[]> {
   }
 }
 
-// Function to fetch news from Mastodon API - focused on tech content
+// Function to fetch news from Mastodon API - focused on trending content
 async function fetchMastodonNews(): Promise<NewsItem[]> {
   try {
-    console.log('Fetching Mastodon news...');
+    console.log('Fetching Mastodon trending news...');
     
-    // Original number of hashtags
-    const techHashtags = ['#tech', '#programming', '#ai', '#webdev', '#opensource', '#linux', '#cybersecurity'];
     let allPosts: MastodonPost[] = [];
     
-    for (const hashtag of techHashtags.slice(0, 4)) { // Keep original limit
+    // Fetch trending posts from Mastodon's explore page
+    try {
+      console.log('Fetching Mastodon trending posts...');
+      const response = await fetch('https://mastodon.social/api/v1/timelines/public?limit=50');
+      const posts = await response.json();
+      allPosts = [...allPosts, ...posts];
+      console.log(`Found ${posts.length} trending posts`);
+    } catch (error) {
+      console.log('Error fetching Mastodon trending posts:', error);
+    }
+    
+    // Also fetch some tech-specific hashtags for better coverage
+    const techHashtags = ['#tech', '#programming', '#ai', '#webdev'];
+    for (const hashtag of techHashtags) {
       try {
         console.log(`Fetching Mastodon posts with ${hashtag}...`);
-        const response = await fetch(`https://mastodon.social/api/v1/timelines/public?limit=20&tagged=${encodeURIComponent(hashtag)}`);
+        const response = await fetch(`https://mastodon.social/api/v1/timelines/public?limit=15&tagged=${encodeURIComponent(hashtag)}`);
         const posts = await response.json();
         allPosts = [...allPosts, ...posts];
         console.log(`Found ${posts.length} posts with ${hashtag}`);
       } catch (error) {
         console.log(`Error fetching ${hashtag}:`, error);
       }
-    }
-    
-    // Also get some general trending posts
-    try {
-      const response = await fetch('https://mastodon.social/api/v1/timelines/public?limit=25');
-      const generalPosts = await response.json();
-      allPosts = [...allPosts, ...generalPosts];
-      console.log(`Found ${generalPosts.length} general posts`);
-    } catch (error) {
-      console.log('Error fetching general Mastodon posts:', error);
     }
     
     // Remove duplicates and filter

@@ -310,7 +310,7 @@ function isWithin3Days(publishedAt: Date): boolean {
   return publishedAt >= threeDaysAgo;
 }
 
-// Enhanced tech relevance detection
+// Enhanced tech relevance detection with debugging
 function isTechRelated(title: string, content?: string, community?: string): boolean {
   const text = `${title} ${content || ''} ${community || ''}`.toLowerCase();
   
@@ -340,14 +340,30 @@ function isTechRelated(title: string, content?: string, community?: string): boo
     'startup', 'entrepreneur', 'product', 'agile', 'scrum', 'devops',
     'mobile', 'ios', 'android', 'flutter', 'react native', 'api', 'rest',
     'graphql', 'microservices', 'architecture', 'system design', 'testing',
-    'performance', 'optimization', 'scalability', 'distributed systems'
+    'performance', 'optimization', 'scalability', 'distributed systems',
+    // Additional broad tech terms
+    'computer', 'digital', 'online', 'internet', 'web', 'app', 'application',
+    'code', 'script', 'algorithm', 'data', 'server', 'client', 'network',
+    'protocol', 'framework', 'library', 'tool', 'platform', 'service',
+    'system', 'hardware', 'software', 'interface', 'user', 'experience',
+    'development', 'engineering', 'technical', 'computing', 'automation',
+    'integration', 'deployment', 'infrastructure', 'monitoring', 'logging',
+    'debugging', 'testing', 'quality', 'maintenance', 'upgrade', 'version',
+    'release', 'beta', 'alpha', 'production', 'staging', 'environment'
   ];
   
   const hasTechIndicator = techIndicators.some(indicator => 
     text.includes(indicator.toLowerCase())
   );
   
-  return hasTechKeyword || hasTechIndicator;
+  const isRelevant = hasTechKeyword || hasTechIndicator;
+  
+  // Debug logging for Mastodon content
+  if (content && content.length > 20) {
+    console.log(`Tech relevance check for "${title.substring(0, 50)}...": ${isRelevant} (hasKeyword: ${hasTechKeyword}, hasIndicator: ${hasTechIndicator})`);
+  }
+  
+  return isRelevant;
 }
 
 // Advanced content quality assessment
@@ -424,6 +440,8 @@ function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVeloci
     viralData[itemKey] = updatedVelocity;
     updateViralVelocityData(viralData);
     
+    console.log(`Viral velocity update for ${source}: score=${currentScore}, velocity=${velocity.toFixed(2)}, isViral=${updatedVelocity.isViral}`);
+    
     return updatedVelocity;
   } else {
     // First time seeing this item - calculate initial velocity
@@ -439,6 +457,8 @@ function calculateViralVelocity(item: NewsItem, source: NewsSource): ViralVeloci
     
     viralData[itemKey] = velocity;
     updateViralVelocityData(viralData);
+    
+    console.log(`Viral velocity init for ${source}: score=${currentScore}, velocity=${initialVelocity.toFixed(2)}, isViral=${velocity.isViral}`);
     
     return velocity;
   }
@@ -540,25 +560,29 @@ function calculateAdvancedScore(item: NewsItem, source: NewsSource): number {
   let viralBonus = 0;
   if (viralVelocity.isViral) {
     // Different viral bonus calculation based on posting style
+    const velocityScore = viralVelocity.velocity * platformStats.velocityWeight;
+    
     switch (platformStats.postingStyle) {
       case 'slow': // HN - slower, more thoughtful
-        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 0.8);
+        viralBonus = Math.pow(velocityScore, 0.8);
         break;
       case 'fast': // Reddit - faster engagement
-        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.2);
+        viralBonus = Math.pow(velocityScore, 1.2);
         break;
       case 'community': // Lemmy - community-driven
-        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.0);
+        viralBonus = Math.pow(velocityScore, 1.0);
         break;
       case 'diverse': // Mastodon - diverse content
-        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 0.9);
+        viralBonus = Math.pow(velocityScore, 0.9);
         break;
       case 'commercial': // Medium - commercial content
-        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.1);
+        viralBonus = Math.pow(velocityScore, 1.1);
         break;
       default:
-        viralBonus = Math.pow(viralVelocity.velocity * platformStats.velocityWeight, 1.0);
+        viralBonus = Math.pow(velocityScore, 1.0);
     }
+    
+    console.log(`Viral bonus for ${source}: velocity=${viralVelocity.velocity.toFixed(2)}, weight=${platformStats.velocityWeight}, bonus=${viralBonus.toFixed(2)}`);
   }
   
   // Quality multiplier (high quality content gets amplified)
@@ -861,11 +885,21 @@ async function fetchMastodonNews(): Promise<NewsItem[]> {
     
     const filteredPosts = uniquePosts
       .filter((post: MastodonPost) => post.content && post.content.length > 20)
-      .filter((post: MastodonPost) => isTechRelated(post.content, post.content))
+      .filter((post: MastodonPost) => {
+        const isTech = isTechRelated(post.content, post.content);
+        if (!isTech) {
+          console.log(`Mastodon tech filter: "${post.content.substring(0, 50)}..." - NOT TECH`);
+        }
+        return isTech;
+      })
       .filter((post: MastodonPost) => {
         // English language filtering
         const englishRatio = englishWordCount(post.content) / post.content.split(' ').length;
-        return englishRatio > 0.7;
+        const isEnglish = englishRatio > 0.7;
+        if (!isEnglish) {
+          console.log(`Mastodon language filter: "${post.content.substring(0, 50)}..." - NOT ENGLISH (${englishRatio.toFixed(2)})`);
+        }
+        return isEnglish;
       })
       .map((post: MastodonPost) => {
         const originalUrl = extractOriginalUrl(post.url, 'mastodon', post);
@@ -911,7 +945,7 @@ async function fetchMediumNews(): Promise<NewsItem[]> {
         console.log(`Scraping Medium page: ${url}`);
         
         // Use a CORS proxy to fetch the actual Medium page
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const proxyUrl = `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`;
         const response = await fetch(proxyUrl);
         
         if (!response.ok) {

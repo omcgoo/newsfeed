@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tech Feed
+
+A modern news feed application inspired by latest.is, providing curated tech, development, UX, digital, internet, and AI content from various sources.
+
+## Features
+
+- **Curated Content**: Aggregates content from multiple tech-focused sources
+- **Smart Ranking**: Items are ranked based on popularity and relevance
+- **Clean Interface**: Modern, distraction-free design
+- **Source Diversity**: Content from Hacker News, Reddit, Bluesky, Lemmy, and more
+- **Real-time Updates**: Fresh content that updates based on popularity
+
+## Sources
+
+The app aggregates content from:
+
+- **Hacker News** - Tech and development discussions
+- **Reddit** - Programming, technology, and web development communities
+- **Bluesky** - Tech-focused social media
+- **Lemmy** - Open source discussions
+- **TechCrunch** - Tech industry news
+- **The Verge** - Technology and culture
+- **Ars Technica** - Technology and science
+
+## Tech Stack
+
+- **Next.js 14** - React framework with App Router
+- **TypeScript** - Type safety and better developer experience
+- **Tailwind CSS** - Utility-first CSS framework
+- **Lucide React** - Beautiful icons
+- **date-fns** - Date formatting utilities
 
 ## Getting Started
 
-First, run the development server:
+1. **Install dependencies**:
+   ```bash
+   npm install
+   ```
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+2. **Run the development server**:
+   ```bash
+   npm run dev
+   ```
+
+3. **Open your browser** and navigate to `http://localhost:3000`
+
+## Project Structure
+
+```
+src/
+├── app/                 # Next.js app directory
+│   ├── page.tsx        # Main page component
+│   ├── layout.tsx      # Root layout
+│   └── globals.css     # Global styles
+├── components/          # React components
+│   ├── NewsFeed.tsx    # Main feed component
+│   └── NewsItem.tsx    # Individual news item
+├── lib/                # Utility functions
+│   └── newsApi.ts      # News fetching logic
+└── types/              # TypeScript type definitions
+    └── news.ts         # News item types
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## API Integration
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The app currently includes:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Hacker News API** - Real-time top stories
+- **Reddit API** - Hot posts from tech subreddits
+- **Mock Data** - Fallback content for demonstration
 
-## Learn More
+## Future Enhancements
 
-To learn more about Next.js, take a look at the following resources:
+- [ ] Add more news sources (Bluesky, Lemmy APIs)
+- [ ] Implement user preferences and filtering
+- [ ] Add dark mode support
+- [ ] Create mobile app version
+- [ ] Add bookmarking functionality
+- [ ] Implement real-time updates
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Contributing
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Feel free to submit issues and enhancement requests!
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT License - feel free to use this project for your own news feed applications.
